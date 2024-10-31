@@ -1,5 +1,4 @@
-import SockJS from 'sockjs-client';
-import { Stomp } from '@stomp/stompjs';
+
 
 // 비디오 요소
 let localStreamElement = document.querySelector('#localStream');
@@ -40,7 +39,6 @@ const startCam = async () =>{
 }
 
 
-// 화면 공유 시작 함수
 const startScreenShare = async () => {
     try {
         console.log('Screen sharing started.');
@@ -49,8 +47,7 @@ const startScreenShare = async () => {
             audio: true // 공유 화면의 오디오 포함
         });
 
-        console.log('Screen connected.');
-        screenStreamElement.srcObject = screenStream;
+        
 
         stompClient.send(`/app/peer/shareScreen/${roomId}`, {}, JSON.stringify({
             key: myKey,
@@ -58,14 +55,17 @@ const startScreenShare = async () => {
             message: `shareScreen ${myKey}`
         }));
 
+        pcListMap.forEach((pc, key) => {
+            screenStream.getTracks().forEach((track) => {
+              pc.addTrack(track, screenStream);
+            });
+          });
 
+          
 
-        // 화면 공유 중지 시 이벤트 핸들러 추가
-        screenStream.getVideoTracks()[0].onended = () => {
-            console.log('Screen sharing stopped.');
-            stopScreenShare();
-        };
-
+        // 화면 스트림을 로컬 화면 요소에 연결
+        screenStreamElement.srcObject = screenStream;
+        
     } catch (error) {
         console.error('Error sharing screen:', error);
     }
@@ -89,7 +89,7 @@ const stopScreenShare = () => {
     
 // 소켓 연결
 const connectSocket = async () =>{
-    const socket = new SockJS('http://localhost:8080/consulting-room');
+    const socket = new SockJS('http://ec2-3-35-49-10.ap-northeast-2.compute.amazonaws.com:8080/consulting-room');
     stompClient = Stomp.over(socket);
     stompClient.debug = null;
     
@@ -97,11 +97,15 @@ const connectSocket = async () =>{
         console.log('Connected to WebRTC server');
 
         stompClient.subscribe(`/topic/peer/shareScreen/${roomId}`, message => {
-            const { screenStream: shareScreenStream } = JSON.parse(message.body);
-            console.log(` ${shareScreenStream} screen shared`);
-    
-            screenStreamElement.srcObject = screenStream;
-            
+            const { key, screenShareStarted } = JSON.parse(message.body);
+            if (screenShareStarted) {
+                console.log(`User ${key} started screen sharing.`);
+            } else {
+                console.log(`User ${key} stopped screen sharing.`);
+                if (screenStreamElement.srcObject && screenStreamElement.srcObject.id === key) {
+                    screenStreamElement.srcObject = null; // 화면 공유 중지 시 비디오 요소 해제
+                }
+            }
         });
 
         stompClient.subscribe(`/topic/peer/disconnect/${roomId}`, message => {
@@ -173,22 +177,21 @@ const connectSocket = async () =>{
  }
     
  let onTrack = (event, otherKey) => {
-    
-     if(document.getElementById(`${otherKey}`) === null){
-         const video =  document.createElement('video');
-
-         video.autoplay = true;
-         video.controls = true;
-         video.id = otherKey;
-         video.srcObject = event.streams[0];
-    
-         document.getElementById('remoteStreamDiv').appendChild(video);
-     }
-    
-     //
-     // remoteStreamElement.srcObject = event.streams[0];
-     // remoteStreamElement.play();
- };
+    // 화면 공유 스트림과 로컬 스트림을 구분하여 처리
+    if (event.streams[0] === screenStream) {
+        screenStreamElement.srcObject = event.streams[0]; // 화면 공유 스트림은 화면 공유 요소에 표시
+    } else {
+        // 상대방의 일반 스트림은 remoteStreamDiv에 추가
+        if (document.getElementById(`${otherKey}`) === null) {
+            const video = document.createElement('video');
+            video.autoplay = true;
+            video.controls = true;
+            video.id = otherKey;
+            video.srcObject = event.streams[0];
+            document.getElementById('remoteStreamDiv').appendChild(video);
+        }
+    }
+};
     
  const createPeerConnection = (otherKey) =>{
      const pc = new RTCPeerConnection();
@@ -275,8 +278,8 @@ const connectSocket = async () =>{
          document.querySelector('#startSteamBtn').style.display = '';
      }
      roomId = document.querySelector('#roomIdInput').value;
-     document.querySelector('#roomIdInput').disabled = true;
-     document.querySelector('#enterRoomBtn').disabled = true;
+    //  document.querySelector('#roomIdInput').disabled = true;
+    //  document.querySelector('#enterRoomBtn').disabled = true;
      
     
      await connectSocket();
@@ -322,3 +325,10 @@ const connectSocket = async () =>{
     console.log("Preparing to share screen...");
     await startScreenShare();
 });
+
+window.addEventListener('beforeunload', (event) => {
+    stompClient.send(`/app/peer/disconnect/${roomId}`, {}, JSON.stringify({
+        key: myKey,
+        message: "${myKey} is leaving the room"
+    }));
+}); 
