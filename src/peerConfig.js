@@ -1,43 +1,125 @@
+import SockJS from 'sockjs-client';
+import { Stomp } from '@stomp/stompjs';
+
+// 비디오 요소
+let localStreamElement = document.querySelector('#localStream');
+let screenStreamElement = document.querySelector('#screenStream');
+const myKey = Math.random().toString(36).substring(2, 11);
+
+//PeerConnection 객체를 저장하는 Map
+let pcListMap = new Map();
+let roomId;
+
+//다른 사용자들의 myKey 목록
+let otherKeyList = [];
+let localStream = undefined;
+let screenStream = undefined;
 
 
- // let remoteStreamElement = document.querySelector('#remoteStream');
- let localStreamElement = document.querySelector('#localStream');
- const myKey = Math.random().toString(36).substring(2, 11);
- let pcListMap = new Map();
- let roomId;
- let otherKeyList = [];
- let localStream = undefined;
+//웹캠과 마이크 설정
+const startCam = async () =>{
+    if(navigator.mediaDevices !== undefined){
+        //사용자의 웹캠과 마이크 요청
+        await navigator.mediaDevices.getUserMedia({ audio: true, video : true })
+            .then(async (stream) => {
+                console.log('Stream found');
+ 				
+                //웹캠, 마이크의 스트림 정보를 글로벌 변수에 저장
+                localStream = stream;
+                //마이크 활성화
+                stream.getAudioTracks()[0].enabled = true;
+
+                // 비디오 요소에 해당 stream을 연결
+                localStreamElement.srcObject = localStream;
     
- const startCam = async () =>{
-     if(navigator.mediaDevices !== undefined){
-         await navigator.mediaDevices.getUserMedia({ audio: true, video : true })
-             .then(async (stream) => {
-                 console.log('Stream found');
- 								//웹캠, 마이크의 스트림 정보를 글로벌 변수로 저장한다.
-                 localStream = stream;
-                 // Disable the microphone by default
-                 stream.getAudioTracks()[0].enabled = true;
-                 localStreamElement.srcObject = localStream;
-                 // Connect after making sure that local stream is availble
+            }).catch(error => {
+                console.error("Error accessing media devices:", error);
+            });
+    }
     
-             }).catch(error => {
-                 console.error("Error accessing media devices:", error);
-             });
-     }
+}
+
+
+// 화면 공유 시작 함수
+const startScreenShare = async () => {
+    try {
+        console.log('Screen sharing started.');
+        screenStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true // 공유 화면의 오디오 포함
+        });
+
+        console.log('Screen connected.');
+        screenStreamElement.srcObject = screenStream;
+
+        stompClient.send(`/app/peer/shareScreen/${roomId}`, {}, JSON.stringify({
+            key: myKey,
+            screenStream : screenStream,
+            message: `shareScreen ${myKey}`
+        }));
+
+
+
+        // 화면 공유 중지 시 이벤트 핸들러 추가
+        screenStream.getVideoTracks()[0].onended = () => {
+            console.log('Screen sharing stopped.');
+            stopScreenShare();
+        };
+
+    } catch (error) {
+        console.error('Error sharing screen:', error);
+    }
+};
+
+// 화면 공유 중지 함수 (수정)
+const stopScreenShare = () => {
+    if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+
+        // 각 피어에서 화면 공유 트랙 제거
+        pcListMap.forEach((pc, key) => {
+            const senders = pc.getSenders().filter(sender => sender.track.kind === 'video');
+            senders.forEach(sender => pc.removeTrack(sender));
+        });
+
+        screenStream = null;
+        console.log('Screen share stopped.');
+    }
+};
     
- }
+// 소켓 연결
+const connectSocket = async () =>{
+    const socket = new SockJS('http://localhost:8080/consulting-room');
+    stompClient = Stomp.over(socket);
+    stompClient.debug = null;
     
- // 소켓 연결
- const connectSocket = async () =>{
-     const socket = new SockJS('http://ec2-3-35-49-10.ap-northeast-2.compute.amazonaws.com:8080/consulting-room');
-     stompClient = Stomp.over(socket);
-     stompClient.debug = null;
+    stompClient.connect({}, function () {
+        console.log('Connected to WebRTC server');
+
+        stompClient.subscribe(`/topic/peer/shareScreen/${roomId}`, message => {
+            const { screenStream: shareScreenStream } = JSON.parse(message.body);
+            console.log(` ${shareScreenStream} screen shared`);
     
-     stompClient.connect({}, function () {
-         console.log('Connected to WebRTC server');
+            screenStreamElement.srcObject = screenStream;
+            
+        });
+
+        stompClient.subscribe(`/topic/peer/disconnect/${roomId}`, message => {
+            const { key: disconnectedKey } = JSON.parse(message.body);
+            console.log(`User ${disconnectedKey} disconnected`);
+    
+            const videoElement = document.getElementById(disconnectedKey);
+            if (videoElement && videoElement.parentNode) {
+                videoElement.parentNode.removeChild(videoElement);
+            }
+    
+            pcListMap.delete(disconnectedKey);
+            otherKeyList = otherKeyList.filter(key => key !== disconnectedKey);
+            
+        });
             
  				//iceCandidate peer 교환을 위한 subscribe
-         stompClient.subscribe(`/topic/peer/iceCandidate/${myKey}/${roomId}`, candidate => {
+        stompClient.subscribe(`/topic/peer/iceCandidate/${myKey}/${roomId}`, candidate => {
              const key = JSON.parse(candidate.body).key
              const message = JSON.parse(candidate.body).body;
     
@@ -94,7 +176,7 @@
     
      if(document.getElementById(`${otherKey}`) === null){
          const video =  document.createElement('video');
-    
+
          video.autoplay = true;
          video.controls = true;
          video.id = otherKey;
@@ -122,8 +204,25 @@
                  pc.addTrack(track, localStream);
              });
          }
+         if(screenStream !== undefined){
+            screenStream.getTracks().forEach(track => {
+                pc.addTrack(track,screenStream);
+            })
+         }
     
          console.log('PeerConnection created');
+         pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === 'disconnected' || 
+                pc.iceConnectionState === 'failed' || 
+                pc.iceConnectionState === 'closed') {
+              // 해당 피어의 비디오를 DOM에서 제거
+              const videoElement = document.getElementById(`peer_${pc.remoteDescription.sdpMid}`);
+              if (videoElement) {
+                videoElement.remove();
+                console.log('Disconnected peer video removed.');
+              }
+            }
+          };
      } catch (error) {
          console.error('PeerConnection failed: ', error);
      }
@@ -139,6 +238,7 @@
          }));
      }
  };
+
     
  let sendOffer = (pc ,otherKey) => {
      pc.createOffer().then(offer =>{
@@ -177,6 +277,7 @@
      roomId = document.querySelector('#roomIdInput').value;
      document.querySelector('#roomIdInput').disabled = true;
      document.querySelector('#enterRoomBtn').disabled = true;
+     
     
      await connectSocket();
  });
@@ -185,7 +286,7 @@
  // peer 커넥션은 pcListMap 으로 저장
  document.querySelector('#startSteamBtn').addEventListener('click', async () =>{
      await stompClient.send(`/app/call/key`, {}, {});
-    
+
      setTimeout(() =>{
     
          otherKeyList.map((key) =>{
@@ -197,4 +298,27 @@
          });
     
      },1000);
+     
  });
+ document.querySelector('#finishStreamBtn').addEventListener('click', async () => {
+    stompClient.send(`/app/peer/disconnect/${roomId}`, {}, JSON.stringify({
+        key: myKey,
+        message: `${myKey} is leaving the room`
+    }));
+
+    
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStreamElement.srcObject = null;
+    }
+
+    // Close all peer connections
+    pcListMap.forEach((pc, key) => pc.close());
+    pcListMap.clear();
+
+    console.log('Disconnected from the room.');
+ });
+ document.querySelector('#shareScreenBtn').addEventListener('click', async () => {
+    console.log("Preparing to share screen...");
+    await startScreenShare();
+});

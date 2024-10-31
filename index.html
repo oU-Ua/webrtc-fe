@@ -17,10 +17,16 @@
     <button type="button" id="enterRoomBtn">enter Room</button>
 		<!-- enterRoomBtn 클릭시 나타남, Streams 정보를 담은 Peer 를 웹소켓 ( 시그널링 )   -->
     <button type="button" id="startSteamBtn" style="display: none;">start Streams</button>
+    <button type="button" id="shareScreenBtn" >Share Screen</button>
+    
+    <button type="button" id="finishStreamBtn"> finishStreams</button>
 </div>
 		<!-- 내 웹캠 화면을 보여주는 video html -->
-    <video id="localStream" autoplay playsinline controls style="display: none;"></video>
-		
+    <div style="display: flex; justify-items: center;">
+    <div><video id="localStream" autoplay playsinline controls style="display: none;"></video></div>
+    
+    <div><video id="screenStream" autoplay playsinline controls style="width: 50%; height: auto;"></video></div>
+    </div>
 		<!-- WebRTC에 연결된 웹캠들이 추가되는 Div  -->
     <div id="remoteStreamDiv">
     </div>
