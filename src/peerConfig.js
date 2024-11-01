@@ -47,13 +47,25 @@ const startScreenShare = async () => {
     console.log("Screen connected.");
     screenStreamElement.srcObject = screenStream;
 
+    //다른 피어들에게 화면 공유 스트림
+    pcListMap.forEach((pc, key) => {
+      const videoSender = pc
+        .getSenders()
+        .find((sender) => sender.track.kind === "video");
+
+      if (videoSender) {
+        videoSender.replaceTrack(screenStream.getVideoTracks()[0]);
+      } else {
+        pc.addTrack(screenStream.getVideoTracks()[0], screenStream);
+      }
+    });
+
     stompClient.send(
       `/app/peer/shareScreen/${roomId}`,
       {},
       JSON.stringify({
         key: myKey,
-        screenStream: screenStream,
-        message: `shareScreen ${myKey}`,
+        message: `Screen sharing started by ${myKey}`,
       })
     );
 
@@ -67,21 +79,34 @@ const startScreenShare = async () => {
   }
 };
 
-// 화면 공유 중지 함수 (수정)
+// 화면 공유 중지 함수 (수정됨)
 const stopScreenShare = () => {
   if (screenStream) {
     screenStream.getTracks().forEach((track) => track.stop());
 
-    // 각 피어에서 화면 공유 트랙 제거
+    // 각 피어에서 화면 공유 트랙 제거 및 웹캠 비디오로 복구
     pcListMap.forEach((pc, key) => {
-      const senders = pc
+      const videoSender = pc
         .getSenders()
-        .filter((sender) => sender.track.kind === "video");
-      senders.forEach((sender) => pc.removeTrack(sender));
+        .find((sender) => sender.track.kind === "video");
+
+      if (videoSender && localStream) {
+        videoSender.replaceTrack(localStream.getVideoTracks()[0]);
+      }
     });
 
     screenStream = null;
     console.log("Screen share stopped.");
+
+    // 화면 공유 종료 알림을 전송
+    stompClient.send(
+      `/app/peer/disconnect/${roomId}`,
+      {},
+      JSON.stringify({
+        key: myKey,
+        message: "Screen sharing stopped",
+      })
+    );
   }
 };
 
