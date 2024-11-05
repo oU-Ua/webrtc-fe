@@ -1,3 +1,4 @@
+
 // 비디오 요소
 let localStreamElement = document.querySelector("#localStream");
 let screenStreamElement = document.querySelector("#screenStream");
@@ -35,8 +36,8 @@ const startCam = async () => {
   }
 };
 
-// 화면 공유 시작 함수
 const startScreenShare = async () => {
+
   try {
     console.log("Screen sharing started.");
     screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -44,8 +45,10 @@ const startScreenShare = async () => {
       audio: true, // 공유 화면의 오디오 포함
     });
 
+
     console.log("Screen connected.");
     screenStreamElement.srcObject = screenStream;
+
 
     //다른 피어들에게 화면 공유 스트림
     pcListMap.forEach((pc, key) => {
@@ -77,6 +80,7 @@ const startScreenShare = async () => {
   } catch (error) {
     console.error("Error sharing screen:", error);
   }
+
 };
 
 // 화면 공유 중지 함수 (수정됨)
@@ -111,6 +115,7 @@ const stopScreenShare = () => {
 };
 
 // 소켓 연결
+
 const connectSocket = async () => {
   const socket = new SockJS(
     "http://ec2-3-35-49-10.ap-northeast-2.compute.amazonaws.com:8080/consulting-room"
@@ -373,4 +378,13 @@ document
   .addEventListener("click", async () => {
     console.log("Preparing to share screen...");
     await startScreenShare();
-  });
+
+});
+
+window.addEventListener('beforeunload', (event) => {
+    stompClient.send(`/app/peer/disconnect/${roomId}`, {}, JSON.stringify({
+        key: myKey,
+        message: "${myKey} is leaving the room"
+    }));
+}); 
+
