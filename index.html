@@ -24,14 +24,23 @@
     <button type="button" id="finishStreamBtn"> finishStreams</button>
 </div>
 		<!-- 내 웹캠 화면을 보여주는 video html -->
-    <div style="display: flex; justify-items: center;">
-    <div><video id="localStream" autoplay playsinline controls style="display: none;"></video></div>
+    <div style="display: flex; justify-items: center; flex-direction: row;">
+    <div>
+      <div><video id="localStream" autoplay playsinline controls style="display: none;  transform: rotateY(180deg); -webkit-transform:rotateY(180deg);"></video></div>
+      <!-- WebRTC에 연결된 웹캠들이 추가되는 Div  -->
+      <div id="remoteStreamDiv" style=" transform: rotateY(180deg); -webkit-transform:rotateY(180deg);">
+      </div>
+      <div><video id="screenStream" autoplay playsinline controls style="width: 50%; height: auto;"></video></div>
     
-    <div><video id="screenStream" autoplay playsinline controls style="width: 50%; height: auto;"></video></div>
     </div>
-		<!-- WebRTC에 연결된 웹캠들이 추가되는 Div  -->
-    <div id="remoteStreamDiv">
+    <div id="chatContainer" style="margin-top: 20px;">
+      <div id="chatMessages" style="border: 1px solid black; height: 200px; overflow-y: auto; padding: 10px;">
+            <!-- 채팅 메시지가 표시될 부분 -->
+      </div>
+      <input type="text" id="chatInput" placeholder="Enter your message" style="width: 80%;" />
+      <button type="button" id="sendChatBtn">Send</button>
     </div>
+  </div>
 		<!-- webRTC 연결을 위한 js  -->
     <script src="./src/peerConfig.js"></script>
 </body>

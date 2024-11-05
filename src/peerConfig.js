@@ -1,4 +1,3 @@
-
 // 비디오 요소
 let localStreamElement = document.querySelector("#localStream");
 let screenStreamElement = document.querySelector("#screenStream");
@@ -36,8 +35,8 @@ const startCam = async () => {
   }
 };
 
+// 화면 공유 시작 함수
 const startScreenShare = async () => {
-
   try {
     console.log("Screen sharing started.");
     screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -45,10 +44,8 @@ const startScreenShare = async () => {
       audio: true, // 공유 화면의 오디오 포함
     });
 
-
     console.log("Screen connected.");
     screenStreamElement.srcObject = screenStream;
-
 
     //다른 피어들에게 화면 공유 스트림
     pcListMap.forEach((pc, key) => {
@@ -80,13 +77,14 @@ const startScreenShare = async () => {
   } catch (error) {
     console.error("Error sharing screen:", error);
   }
-
 };
 
 // 화면 공유 중지 함수 (수정됨)
 const stopScreenShare = () => {
   if (screenStream) {
     screenStream.getTracks().forEach((track) => track.stop());
+
+    console.log("screen replace webCam")
 
     // 각 피어에서 화면 공유 트랙 제거 및 웹캠 비디오로 복구
     pcListMap.forEach((pc, key) => {
@@ -102,20 +100,10 @@ const stopScreenShare = () => {
     screenStream = null;
     console.log("Screen share stopped.");
 
-    // 화면 공유 종료 알림을 전송
-    stompClient.send(
-      `/app/peer/disconnect/${roomId}`,
-      {},
-      JSON.stringify({
-        key: myKey,
-        message: "Screen sharing stopped",
-      })
-    );
   }
 };
 
 // 소켓 연결
-
 const connectSocket = async () => {
   const socket = new SockJS(
     "http://ec2-3-35-49-10.ap-northeast-2.compute.amazonaws.com:8080/consulting-room"
@@ -133,6 +121,25 @@ const connectSocket = async () => {
       screenStreamElement.srcObject = screenStream;
     });
 
+    stompClient.subscribe(`/topic/peer/chat/message/${roomId}`, (message) => {
+      console.log("receive message! ");
+      const { id, chat, time } = JSON.parse(message.body);
+
+      console.log(` ${id} send message ${chat} at ${time}`);
+
+      const chatMessagesDiv = document.getElementById('chatMessages');
+  
+      // 새로운 메시지 요소 생성
+      const newMessageDiv = document.createElement('div');
+      newMessageDiv.textContent = `${id} (${time}): ${chat}`;
+      
+      // 메시지를 chatMessagesDiv에 추가
+      chatMessagesDiv.appendChild(newMessageDiv);
+      
+      // 자동 스크롤 (새로운 메시지가 보이도록)
+      chatMessagesDiv.scrollTop = chatMessagesDiv.scrollHeight;
+    });
+
     stompClient.subscribe(`/topic/peer/disconnect/${roomId}`, (message) => {
       const { key: disconnectedKey } = JSON.parse(message.body);
       console.log(`User ${disconnectedKey} disconnected`);
@@ -145,6 +152,8 @@ const connectSocket = async () => {
       pcListMap.delete(disconnectedKey);
       otherKeyList = otherKeyList.filter((key) => key !== disconnectedKey);
     });
+
+
 
     //iceCandidate peer 교환을 위한 subscribe
     stompClient.subscribe(
@@ -321,6 +330,21 @@ const setLocalAndSendMessage = (pc, sessionDescription) => {
   pc.setLocalDescription(sessionDescription);
 };
 
+let sendMeesage = (message) =>{
+  let now = new Date();
+  stompClient.send(
+    `/app/peer/chat/message/${roomId}`,
+    {},
+    JSON.stringify({
+      id : myKey,
+      chat: message,
+      time : now
+    })
+  );
+  
+  
+}
+
 //룸 번호 입력 후 캠 + 웹소켓 실행
 document.querySelector("#enterRoomBtn").addEventListener("click", async () => {
   await startCam();
@@ -378,13 +402,27 @@ document
   .addEventListener("click", async () => {
     console.log("Preparing to share screen...");
     await startScreenShare();
+  });
 
-});
 
-window.addEventListener('beforeunload', (event) => {
+  window.addEventListener('beforeunload', (event) => {
     stompClient.send(`/app/peer/disconnect/${roomId}`, {}, JSON.stringify({
         key: myKey,
         message: "${myKey} is leaving the room"
     }));
 }); 
 
+document
+.querySelector("#shareScreenFinishBtn")
+.addEventListener("click", async () => {
+  console.log("Stop share screen...");
+  stopScreenShare();
+});
+
+document.querySelector("#sendChatBtn").addEventListener("click",async () =>{
+  const message = document.getElementById("chatInput");
+  console.log("send Meesage");
+  sendMeesage(message.value);
+  message.value = '';
+
+})
